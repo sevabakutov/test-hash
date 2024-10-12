@@ -1,0 +1,8 @@
+.env
+tests/
+*.log
+*.ini
+*.out
+migrations/
+project/
+venv/
