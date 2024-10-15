@@ -70,7 +70,7 @@ class TradeIdea(models.Model):
         null=False
     )
 
-    created_at = models.DateTimeField(auto_now_add=True)
+    created_at = models.DateTimeField(null=True, blank=True)
     closed_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
@@ -82,7 +82,7 @@ class TradeInvestment(models.Model):
     trade_idea = models.ForeignKey(TradeIdea, related_name='trade_investments', on_delete=models.CASCADE)
 
     amount_invested = models.DecimalField(max_digits=10, decimal_places=2)
-    invested_at = models.DateTimeField(auto_now_add=True)
+    invested_at = models.DateTimeField(null=True, blank=True)
 
     def __str__(self):
         return f"{self.user.username} invested {self.amount_invested} in {self.trade_idea.title}"

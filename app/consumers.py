@@ -9,7 +9,7 @@ from redis.exceptions import DataError
 from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncWebsocketConsumer
 
-from app.models import TelegramUser, TradeIdea, TradeInvestment
+from app.models import TelegramUser, TradeIdea, TradeInvestment, Active
 from app.serializers import TelegramUserSerializer, TradingPoolSerializer, TradeInvestmentSerializer
 from app.utils import verify_telegram_init_data
 
@@ -32,8 +32,60 @@ class PoolConsumer(AsyncWebsocketConsumer):
         )
 
     @classmethod
+    def update_pools(cls, data: dict) -> None:
+        logger.debug(f"Pool: {data}")
+        key = json.dumps({ "u": data["username"], "t": data["createdAt"] })
+        val = json.dumps({ "d": data })
+
+        redis_client1.publish("main.pools_channel", json.dumps({ "pool": val }))
+        redis_client1.rpush("pools", json.dumps({ "key": key, "val": val }))
+
+    @classmethod
+    def update_pool(cls, data: dict):
+        key = json.dumps({"u": data["username"], "t": data["createdAt"]})
+        val = json.dumps({"d": data})
+
+        redis_client1.publish("main.pool_channel", json.dumps({"pool": val}))
+        redis_client1.lset("pools", data["id"] - 1, json.dumps({ "key": key, "val": val }))
+
+    @classmethod
+    def update_invs(cls, data: dict):
+        key = json.dumps({ "u": data["userId"], "t": data["time"] })
+        val = json.dumps({ "d": data })
+
+        redis_client1.publish("main.investment_channel", json.dumps({ "inv": val }))
+        redis_client1.lpush("invs", json.dumps({ "key": key, "val": val }))
+
+    # @classmethod
+    # def update_inv(cls, data: dict):
+    #     key = json.dumps({ "u": data["userId"], "t": data["time"] })
+    #     val = json.dumps({ "" })
+
+    @classmethod
     def load_dashboard(cls):
         return json.dumps(redis_client1.zrange("dashboard", 0, -1, withscores=True))
+
+    @classmethod
+    def load_pools(cls) -> list:
+        pools = redis_client1.lrange("pools", 0, -1)
+        res = []
+        for item in pools:
+            pool_data = json.loads(item)
+            val = json.loads(pool_data["val"])
+            res.append(val["d"])
+
+        return res
+
+    @classmethod
+    def load_invs(cls):
+        invs = redis_client1.lrange("invs", 0, -1)
+        res = []
+        for item in invs:
+            inv_data = json.loads(item)
+            val = json.loads(inv_data["val"])
+            res.append(val["d"])
+
+        return res
 
     @classmethod
     def delete_user_from_dashboard(cls, key: str) -> None:
@@ -43,11 +95,19 @@ class PoolConsumer(AsyncWebsocketConsumer):
             json.dumps(redis_client1.zrange("dashboard", 0, -1, withscores=True))
         )
 
+
+    @database_sync_to_async
+    def db_get_active(self, active_id):
+        try:
+            return Active.objects.get(id=active_id)
+        except Exception as ex:
+            logger.debug(str(ex))
     @database_sync_to_async
     def db_user_create(self, username: str) -> TelegramUser:
         return TelegramUser.objects.create(username=username, pnl=0)
     @database_sync_to_async
     def db_user_get(self, username: str) -> TelegramUser:
+        logger.debug(f"username: {username}")
         return TelegramUser.objects.get(username=username)
     @database_sync_to_async
     def db_user_trade_pools(self, user: TelegramUser):
@@ -68,6 +128,53 @@ class PoolConsumer(AsyncWebsocketConsumer):
     @database_sync_to_async
     def db_check_user(self, username):
         return TelegramUser.objects.filter(username=username).exists()
+    @database_sync_to_async
+    def db_trade_pool_create(self, user: object, active: object, data: dict):
+        logger.debug(f"function trade pol create start: {user}, {data}")
+        try:
+            obj =  TradeIdea.objects.create(
+                user=user,
+                active_id=active,
+                isLong=data["isLong"],
+                isOrder=data["isOrder"],
+                order=data["order"],
+                final_amount=data["finalAmount"],
+                stop_loss=data["stopLoss"],
+                take_profit=data["takeProfit"],
+                leverage=data["leverage"],
+                curr_value=0,
+                in_amount=0,
+                created_at=data["createdAt"]
+            )
+            logger.debug(f"after creting pool: {obj}")
+            ser = TradingPoolSerializer(obj)
+            logger.debug(f"trade pool create funcion: {ser.data}")
+            return ser.data
+        except Exception as ex:
+            logger.debug(str(ex))
+    @database_sync_to_async
+    def db_trade_pool_update(self, data=None):
+        try:
+            obj = TradeIdea.objects.get(id=data["id"])
+            obj.curr_value = data["currValue"]
+            obj.in_amount = data["inAmount"]
+            obj.save()
+
+        except Exception as ex:
+            logger.exception(str(ex))
+
+    @database_sync_to_async
+    def db_trade_inv_create(self, user: TelegramUser, trade_pool: TradeIdea, data: dict):
+        try:
+            obj = TradeInvestment.objects.create(
+                user=user,
+                trade_pool=trade_pool,
+                amount_invested=data["amount"],
+                invested_at=data["time"]
+            )
+
+        except Exception as ex:
+            logger.exception(str(ex))
 
 
     async def connect(self):
@@ -100,18 +207,24 @@ class PoolConsumer(AsyncWebsocketConsumer):
             if action == "auth":
                 user_data = await self.verif(params["init_data"])
                 username = user_data["username"]
-                if await self.db_check_user(username):
-                    await self.user_get_all_data(username)
-                    leaderboard = json.loads(self.load_dashboard())
-                    await self.send(text_data=json.dumps({
-                        "type": "dash",
-                        "data": leaderboard[-3:][::-1]
-                    }))
-
-                else:
+                if not await self.db_check_user(username):
                     await self.user_create(username)
-                    await self.user_get_all_data(username)
                     self.update_dashboard(username, 0)
+
+                all_data = await self.user_get_all_data(username)
+                leaderboard = json.loads(self.load_dashboard())
+                pools = self.load_pools()
+                invs = self.load_invs()
+                await self.send(text_data=json.dumps({
+                    "type": "auth",
+                    "data": {
+                        "user": all_data,
+                        "dash": leaderboard[-3:][::-1],
+                        "pools": pools[::-1],
+                        "invs": invs
+                    }
+                }))
+
             else:
                 username = params["username"]
                 if action == "update":
@@ -128,8 +241,24 @@ class PoolConsumer(AsyncWebsocketConsumer):
                 elif action == "get":
                     await self.user_get_data(username)
 
-        # elif m_type == "dash":
-        #     await self.get_dashboard()
+        elif m_type == "trade_pool":
+            if action == "create":
+                pool = await self.trade_pool_create(params)
+                self.update_pools(pool)
+
+            elif action == "update":
+                self.update_pool(params["pool"])
+                self.update_invs(params["investment"])
+                await self.db_trade_pool_update(params["pool"])
+                await self.trade_inv_create(params["investment"])
+
+        elif m_type == "trade_inv":
+            if action == "delete":
+                self.delete_inv(params["investment"])
+                self.update_pools(params["pool"])
+                await self.db_trade_pool_update(params["pool"])
+                await self.trade_inv_delete(params["investment"])
+
 
 
     async def verif(self, init_data_str: str) -> dict:
@@ -149,29 +278,43 @@ class PoolConsumer(AsyncWebsocketConsumer):
         data = json.loads(data)
         logger.info(f"Dashboard update received: {data}")
 
-        # Отправка сообщения клиенту напрямую
         await self.send(text_data=json.dumps({
             'type': 'dash',
             'data': data
         }))
 
+    async def pool(self, event):
+        data = event["data"]
+        data = json.loads(data)
+        data = json.loads(data["pool"])
+        logger.info(f"Pools updatye received: {data}")
 
-    # async def get_dashboard(self) -> None:
-    #     try:
-    #         # [("username": pnl), ...]
-    #         dash = redis_client1.zrange("dashboard", 0, -1, withscores=True)
-    #         await self.send(text_data=json.dumps({
-    #             "type": "dash",
-    #             "data": {
-    #                 "dash": dash
-    #             }
-    #         }))
-    #
-    #     except Exception as ex:
-    #         await self.send(text_data=json.dumps({
-    #             "type": "error",
-    #             "message": str(ex)
-    #         }))
+        await self.send(text_data=json.dumps({
+            "type": "pool",
+            "data": data["d"]
+        }))
+
+    async def update_pool(self, event):
+        data = json.loads(event["data"])
+        data = json.loads(data["pool"])
+
+        logger.info(f"Update pool: {data}")
+
+        await self.send(text_data=json.dumps({
+            "type": "update_pool",
+            "data": data["d"]
+        }))
+
+    async def invs(self, event):
+        data = json.loads(event["data"])
+        data = json.loads(data["pool"])
+
+        logger.info(f"New investment: {data}")
+
+        await self.send(text_data=json.dumps({
+            "type": "invs",
+            "data": data["d"]
+        }))
 
 
     async def get_active(self, key):
@@ -238,7 +381,7 @@ class PoolConsumer(AsyncWebsocketConsumer):
                 "message": str(ex)
             }))
 
-    async def user_get_all_data(self, username: str) -> None:
+    async def user_get_all_data(self, username: str):
         try:
             user = await self.db_user_get(username)
             trade_pools = await self.db_user_trade_pools(user)
@@ -246,14 +389,11 @@ class PoolConsumer(AsyncWebsocketConsumer):
 
             user_serializer = TelegramUserSerializer(user)
 
-            await self.send(text_data=json.dumps({
-                "type": "user",
-                "data": {
-                    "user": user_serializer.data,
-                    "trade_pools": trade_pools,
-                    "trade_invs": trade_invs
-                }
-            }))
+            return {
+                "user": user_serializer.data,
+                "trade_pools": trade_pools,
+                "trade_invs": trade_invs
+            }
 
         except Exception as ex:
             logger.debug(ex)
@@ -276,5 +416,28 @@ class PoolConsumer(AsyncWebsocketConsumer):
 
 
 
+    async def trade_pool_create(self, data=None):
+        try:
+            user = await self.db_user_get(data.get("username", ""))
+            active = await self.db_get_active(int(data.get("activeId", "")))
+
+            return await self.db_trade_pool_create(user, active, data)
+
+        except Exception as ex:
+            await self.send(text_data=json.dumps({
+                "type": "error",
+                "message": str(ex)
+            }))
+
+    async def trade_inv_create(self, data: dict) -> None:
+        try:
+            user = await self.db_user_get(data["username"])
+            active = await self.db_get_active(data["activeId"])
+            return await self.db_trade_inv_create(user, active, data)
+
+        except Exception as ex:
+            logger.exception(str(ex))
 
 
+    # async def trade_pool_update(self, data=None):
+    #     try:
