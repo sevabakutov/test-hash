@@ -84,8 +84,5 @@ class TradeInvestment(models.Model):
     amount_invested = models.DecimalField(max_digits=10, decimal_places=2)
     invested_at = models.DateTimeField(null=True, blank=True)
 
-    def __str__(self):
-        return f"{self.user.username} invested {self.amount_invested} in {self.trade_idea.title}"
-
     class Meta:
         app_label = 'app'

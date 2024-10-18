@@ -19,9 +19,9 @@ redis_client1 = redis.Redis(host='localhost', port=6379, decode_responses=True)
 
 class PoolConsumer(AsyncWebsocketConsumer):
 
-    @classmethod
-    def set_active(cls, key: str | int, value: str) -> None:
-        redis_client1.hset("actives", key, value)
+    # @classmethod
+    # def set_active(cls, key: str | int, value: str) -> None:
+    #     redis_client1.hset("actives", key, value)
 
     @classmethod
     def update_dashboard(cls, key: str, value: int) -> None:
@@ -31,30 +31,30 @@ class PoolConsumer(AsyncWebsocketConsumer):
             json.dumps(redis_client1.zrange("dashboard", 0, -1, withscores=True))
         )
 
-    @classmethod
-    def update_pools(cls, data: dict) -> None:
-        logger.debug(f"Pool: {data}")
-        key = json.dumps({ "u": data["username"], "t": data["createdAt"] })
-        val = json.dumps({ "d": data })
+    # @classmethod
+    # def update_pools(cls, data: dict) -> None:
+    #     logger.debug(f"Pool: {data}")
+    #     key = json.dumps({ "u": data["username"], "t": data["createdAt"] })
+    #     val = json.dumps({ "d": data })
+    #
+    #     redis_client1.publish("main.pools_channel", json.dumps({ "pool": val }))
+    #     redis_client1.rpush("pools", json.dumps({ "key": key, "val": val }))
+    #
+    # @classmethod
+    # def update_pool(cls, data: dict):
+    #     key = json.dumps({"u": data["username"], "t": data["createdAt"]})
+    #     val = json.dumps({"d": data})
+    #
+    #     redis_client1.publish("main.pool_channel", json.dumps({"pool": val}))
+    #     redis_client1.lset("pools", data["id"] - 1, json.dumps({ "key": key, "val": val }))
 
-        redis_client1.publish("main.pools_channel", json.dumps({ "pool": val }))
-        redis_client1.rpush("pools", json.dumps({ "key": key, "val": val }))
-
-    @classmethod
-    def update_pool(cls, data: dict):
-        key = json.dumps({"u": data["username"], "t": data["createdAt"]})
-        val = json.dumps({"d": data})
-
-        redis_client1.publish("main.pool_channel", json.dumps({"pool": val}))
-        redis_client1.lset("pools", data["id"] - 1, json.dumps({ "key": key, "val": val }))
-
-    @classmethod
-    def update_invs(cls, data: dict):
-        key = json.dumps({ "u": data["userId"], "t": data["time"] })
-        val = json.dumps({ "d": data })
-
-        redis_client1.publish("main.investment_channel", json.dumps({ "inv": val }))
-        redis_client1.lpush("invs", json.dumps({ "key": key, "val": val }))
+    # @classmethod
+    # def update_invs(cls, data: dict):
+    #     key = json.dumps({ "u": data["userId"], "t": data["time"] })
+    #     val = json.dumps({ "d": data })
+    #
+    #     redis_client1.publish("main.investment_channel", json.dumps({ "inv": val }))
+    #     redis_client1.lpush("invs", json.dumps({ "key": key, "val": val }))
 
     # @classmethod
     # def update_inv(cls, data: dict):
@@ -65,27 +65,27 @@ class PoolConsumer(AsyncWebsocketConsumer):
     def load_dashboard(cls):
         return json.dumps(redis_client1.zrange("dashboard", 0, -1, withscores=True))
 
-    @classmethod
-    def load_pools(cls) -> list:
-        pools = redis_client1.lrange("pools", 0, -1)
-        res = []
-        for item in pools:
-            pool_data = json.loads(item)
-            val = json.loads(pool_data["val"])
-            res.append(val["d"])
+    # @classmethod
+    # def load_pools(cls) -> list:
+    #     pools = redis_client1.lrange("pools", 0, -1)
+    #     res = []
+    #     for item in pools:
+    #         pool_data = json.loads(item)
+    #         val = json.loads(pool_data["val"])
+    #         res.append(val["d"])
+    #
+    #     return res
 
-        return res
-
-    @classmethod
-    def load_invs(cls):
-        invs = redis_client1.lrange("invs", 0, -1)
-        res = []
-        for item in invs:
-            inv_data = json.loads(item)
-            val = json.loads(inv_data["val"])
-            res.append(val["d"])
-
-        return res
+    # @classmethod
+    # def load_invs(cls):
+    #     invs = redis_client1.lrange("invs", 0, -1)
+    #     res = []
+    #     for item in invs:
+    #         inv_data = json.loads(item)
+    #         val = json.loads(inv_data["val"])
+    #         res.append(val["d"])
+    #
+    #     return res
 
     @classmethod
     def delete_user_from_dashboard(cls, key: str) -> None:
@@ -106,9 +106,15 @@ class PoolConsumer(AsyncWebsocketConsumer):
     def db_user_create(self, username: str) -> TelegramUser:
         return TelegramUser.objects.create(username=username, pnl=0)
     @database_sync_to_async
-    def db_user_get(self, username: str) -> TelegramUser:
-        logger.debug(f"username: {username}")
-        return TelegramUser.objects.get(username=username)
+    def db_user_get(self, username: str = None, user_id=None) -> TelegramUser:
+        logger.debug(f"username: {username}, user_id: {user_id}")
+        try:
+            if user_id:
+                return TelegramUser.objects.get(id=user_id)
+            return TelegramUser.objects.get(username=username)
+
+        except Exception as ex:
+            logger.exception(str(ex))
     @database_sync_to_async
     def db_user_trade_pools(self, user: TelegramUser):
         trade_pools = TradeIdea.objects.filter(user=user)
@@ -130,7 +136,7 @@ class PoolConsumer(AsyncWebsocketConsumer):
         return TelegramUser.objects.filter(username=username).exists()
     @database_sync_to_async
     def db_trade_pool_create(self, user: object, active: object, data: dict):
-        logger.debug(f"function trade pol create start: {user}, {data}")
+        # logger.debug(f"function trade pol create start: {user}, {data}")
         try:
             obj =  TradeIdea.objects.create(
                 user=user,
@@ -146,12 +152,13 @@ class PoolConsumer(AsyncWebsocketConsumer):
                 in_amount=0,
                 created_at=data["createdAt"]
             )
-            logger.debug(f"after creting pool: {obj}")
+            # logger.debug(f"after creting pool: {obj}")
             ser = TradingPoolSerializer(obj)
-            logger.debug(f"trade pool create funcion: {ser.data}")
+            # logger.debug(f"trade pool create funcion: {ser.data}")
             return ser.data
         except Exception as ex:
             logger.debug(str(ex))
+
     @database_sync_to_async
     def db_trade_pool_update(self, data=None):
         try:
@@ -160,18 +167,83 @@ class PoolConsumer(AsyncWebsocketConsumer):
             obj.in_amount = data["inAmount"]
             obj.save()
 
+            ser = TradingPoolSerializer(obj)
+
+            return ser.data
+
         except Exception as ex:
             logger.exception(str(ex))
+
+    @database_sync_to_async
+    def db_trade_pool_get(self, trade_pool_id):
+        try:
+            return TradeIdea.objects.get(id=trade_pool_id)
+
+        except Exception as ex:
+            logger.exception(str(ex))
+
+    @database_sync_to_async
+    def db_trade_pool_get_all(self):
+        try:
+            objs = TradeIdea.objects.all()
+            ser = TradingPoolSerializer(objs, many=True)
+
+            return ser.data
+
+        except Exception as ex:
+            logger.exception(str(ex))
+
+    @database_sync_to_async
+    def db_trade_inv_check(self, user, trade_pool):
+        try:
+            return TradeInvestment.objects.filter(user=user, trade_idea=trade_pool).exists()
+
+        except Exception as ex:
+            logger.exception(str(ex))
+
 
     @database_sync_to_async
     def db_trade_inv_create(self, user: TelegramUser, trade_pool: TradeIdea, data: dict):
         try:
             obj = TradeInvestment.objects.create(
                 user=user,
-                trade_pool=trade_pool,
-                amount_invested=data["amount"],
-                invested_at=data["time"]
+                trade_idea=trade_pool,
+                amount_invested=data.get("amountInvested", ""),
+                invested_at=data.get("time", "")
             )
+
+        except Exception as ex:
+            logger.exception(str(ex))
+
+    @database_sync_to_async
+    def db_trade_inv_update(self, user, trade_pool, data):
+        logger.debug(f"db_trade_inv_update, data: {data}")
+        try:
+            obj = TradeInvestment.objects.get(user=user, trade_idea=trade_pool)
+            obj.amount_invested += data.get("amount", 0)
+            obj.invested_at = data.get("time", None)
+            obj.save()
+
+            ser = TradeInvestmentSerializer(obj)
+
+            logger.debug(f"db_trade_inv_update, finish")
+
+            return ser.data
+
+        except Exception as ex:
+            logger.exception(str(ex))
+
+    @database_sync_to_async
+    def db_get_all_invs(self):
+        objs = TradeInvestment.objects.all()
+        ser = TradeInvestmentSerializer(objs, many=True)
+        return ser.data
+
+    @database_sync_to_async
+    def db_trade_inv_delete(self, user, trade_pool):
+        try:
+            obj = TradeInvestment.objects.get(user=user, trade_idea=trade_pool)
+            obj.delete()
 
         except Exception as ex:
             logger.exception(str(ex))
@@ -211,10 +283,11 @@ class PoolConsumer(AsyncWebsocketConsumer):
                     await self.user_create(username)
                     self.update_dashboard(username, 0)
 
-                all_data = await self.user_get_all_data(username)
                 leaderboard = json.loads(self.load_dashboard())
-                pools = self.load_pools()
-                invs = self.load_invs()
+                all_data = await self.user_get_all_data(username)
+                # pools = self.load_pools()
+                pools = await self.db_trade_pool_get_all()
+                invs = await self.db_get_all_invs()
                 await self.send(text_data=json.dumps({
                     "type": "auth",
                     "data": {
@@ -244,20 +317,37 @@ class PoolConsumer(AsyncWebsocketConsumer):
         elif m_type == "trade_pool":
             if action == "create":
                 pool = await self.trade_pool_create(params)
-                self.update_pools(pool)
+                redis_client1.publish("main.pools_channel", json.dumps({
+                    "pool": pool
+                }))
+                # self.update_pools(pool)
 
             elif action == "update":
-                self.update_pool(params["pool"])
-                self.update_invs(params["investment"])
-                await self.db_trade_pool_update(params["pool"])
-                await self.trade_inv_create(params["investment"])
+                investment_data = params.get("investment", None)
+                # self.update_pool(params["pool"])
+                # self.update_invs(params["investment"])
+                new_pool = await self.db_trade_pool_update(params.get("pool", None))
+                if await self.trade_inv_check(investment_data):
+                    logger.info("TRADE INVESTMENT UPDATE")
+                    new_investment = await self.trade_inv_update(investment_data)
+                else:
+                    logger.info("TRADE INVESTMENT CREATE")
+                    new_investment = investment_data
+                    await self.trade_inv_create(investment_data)
 
-        elif m_type == "trade_inv":
+                redis_client1.publish("main.investments_channel", json.dumps({
+                    "pool": new_pool,
+                    "investment": new_investment
+                }))
+
+        elif m_type == "investment":
             if action == "delete":
-                self.delete_inv(params["investment"])
-                self.update_pools(params["pool"])
-                await self.db_trade_pool_update(params["pool"])
-                await self.trade_inv_delete(params["investment"])
+                new_pool = await self.db_trade_pool_update(params.get("pool", None))
+                redis_client1.publish("main.investments_channel", json.dumps({
+                    "pool": new_pool,
+                    "investment": None
+                }))
+                await self.trade_inv_delete(params.get("investment", None))
 
 
 
@@ -286,12 +376,12 @@ class PoolConsumer(AsyncWebsocketConsumer):
     async def pool(self, event):
         data = event["data"]
         data = json.loads(data)
-        data = json.loads(data["pool"])
+        # data = json.loads(data["pool"])
         logger.info(f"Pools updatye received: {data}")
 
         await self.send(text_data=json.dumps({
             "type": "pool",
-            "data": data["d"]
+            "data": data["pool"]
         }))
 
     async def update_pool(self, event):
@@ -305,15 +395,14 @@ class PoolConsumer(AsyncWebsocketConsumer):
             "data": data["d"]
         }))
 
-    async def invs(self, event):
+    async def new_investment(self, event):
         data = json.loads(event["data"])
-        data = json.loads(data["pool"])
 
         logger.info(f"New investment: {data}")
 
         await self.send(text_data=json.dumps({
-            "type": "invs",
-            "data": data["d"]
+            "type": "investment",
+            "data": data
         }))
 
 
@@ -383,7 +472,7 @@ class PoolConsumer(AsyncWebsocketConsumer):
 
     async def user_get_all_data(self, username: str):
         try:
-            user = await self.db_user_get(username)
+            user = await self.db_user_get(username=username)
             trade_pools = await self.db_user_trade_pools(user)
             trade_invs = await self.db_user_trade_invs(user)
 
@@ -429,15 +518,44 @@ class PoolConsumer(AsyncWebsocketConsumer):
                 "message": str(ex)
             }))
 
+    async def trade_inv_check(self, data):
+        try:
+            user = await self.db_user_get(user_id=data.get("userId", ""))
+            logger.debug(f"trade_inv_check: user, {user}")
+
+            trade_pool = await self.db_trade_pool_get(data.get("tradePoolId", ""))
+            logger.debug(f"trade_inv_check: trade_pool, {trade_pool}")
+
+            return await self.db_trade_inv_check(user, trade_pool)
+
+        except Exception as ex:
+            logger.exception(str(ex))
+
     async def trade_inv_create(self, data: dict) -> None:
         try:
-            user = await self.db_user_get(data["username"])
-            active = await self.db_get_active(data["activeId"])
-            return await self.db_trade_inv_create(user, active, data)
+            user = await self.db_user_get(user_id=data.get("userId"))
+            trade_pool = await self.db_trade_pool_get(data.get("tradeIdea", ""))
+            return await self.db_trade_inv_create(user, trade_pool, data)
 
         except Exception as ex:
             logger.exception(str(ex))
 
 
-    # async def trade_pool_update(self, data=None):
-    #     try:
+    async def trade_inv_update(self, data):
+        try:
+            user = await self.db_user_get(user_id=data.get("userId"))
+            trade_pool = await self.db_trade_pool_get(data.get("tradeIdea", ""))
+
+            return await self.db_trade_inv_update(user, trade_pool, data)
+
+        except Exception as ex:
+            logger.exception(str(ex))
+
+    async def trade_inv_delete(self, data):
+        try:
+            user = await self.db_user_get(user_id=data.get("userId", None))
+            trade_pool = await self.db_trade_pool_get(data.get("tradeIdea", None))
+            await self.db_trade_inv_delete(user, trade_pool)
+
+        except Exception as ex:
+            logger.exception(str(ex))

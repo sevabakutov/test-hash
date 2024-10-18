@@ -29,7 +29,7 @@ class Command(BaseCommand):
                     elif "pool" in m_channel:
                         m_type = "pool"
                     else:
-                        m_type = "invs"
+                        m_type = "new_investment"
 
                     async_to_sync(channel_layer.group_send)(
                         "main",
