@@ -24,12 +24,12 @@ class Command(BaseCommand):
                     m_channel = msg["channel"]
                     if "dash" in m_channel:
                         m_type = "dash"
-                    elif "update" in m_channel:
-                        m_type = "update_pool"
+                    # elif "update" in m_channel:
+                    #     m_type = "update_pool"
                     elif "pool" in m_channel:
                         m_type = "pool"
                     else:
-                        m_type = "new_investment"
+                        m_type = "investment"
 
                     async_to_sync(channel_layer.group_send)(
                         "main",
