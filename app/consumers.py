@@ -3,14 +3,13 @@ import logging
 from urllib.parse import parse_qsl
 
 import redis
-from asgiref.sync import sync_to_async
 from redis.exceptions import DataError
 
 from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncWebsocketConsumer
 
-from app.models import TelegramUser, TradeIdea, TradeInvestment, Active
-from app.serializers import TelegramUserSerializer, TradingPoolSerializer, TradeInvestmentSerializer
+from app.models import TelegramUser, TradePool, TradeInvestment
+from app.serializers import TelegramUserSerializer, TradePoolSerializer, TradeInvestmentSerializer
 from app.utils import verify_telegram_init_data
 
 logger = logging.getLogger("channels")
@@ -18,10 +17,6 @@ logger = logging.getLogger("channels")
 redis_client1 = redis.Redis(host='localhost', port=6379, decode_responses=True)
 
 class PoolConsumer(AsyncWebsocketConsumer):
-
-    # @classmethod
-    # def set_active(cls, key: str | int, value: str) -> None:
-    #     redis_client1.hset("actives", key, value)
 
     @classmethod
     def update_dashboard(cls, key: str, value: int) -> None:
@@ -31,61 +26,10 @@ class PoolConsumer(AsyncWebsocketConsumer):
             json.dumps(redis_client1.zrange("dashboard", 0, -1, withscores=True))
         )
 
-    # @classmethod
-    # def update_pools(cls, data: dict) -> None:
-    #     logger.debug(f"Pool: {data}")
-    #     key = json.dumps({ "u": data["username"], "t": data["createdAt"] })
-    #     val = json.dumps({ "d": data })
-    #
-    #     redis_client1.publish("main.pools_channel", json.dumps({ "pool": val }))
-    #     redis_client1.rpush("pools", json.dumps({ "key": key, "val": val }))
-    #
-    # @classmethod
-    # def update_pool(cls, data: dict):
-    #     key = json.dumps({"u": data["username"], "t": data["createdAt"]})
-    #     val = json.dumps({"d": data})
-    #
-    #     redis_client1.publish("main.pool_channel", json.dumps({"pool": val}))
-    #     redis_client1.lset("pools", data["id"] - 1, json.dumps({ "key": key, "val": val }))
-
-    # @classmethod
-    # def update_invs(cls, data: dict):
-    #     key = json.dumps({ "u": data["userId"], "t": data["time"] })
-    #     val = json.dumps({ "d": data })
-    #
-    #     redis_client1.publish("main.investment_channel", json.dumps({ "inv": val }))
-    #     redis_client1.lpush("invs", json.dumps({ "key": key, "val": val }))
-
-    # @classmethod
-    # def update_inv(cls, data: dict):
-    #     key = json.dumps({ "u": data["userId"], "t": data["time"] })
-    #     val = json.dumps({ "" })
-
     @classmethod
     def load_dashboard(cls):
         return json.dumps(redis_client1.zrange("dashboard", 0, -1, withscores=True))
 
-    # @classmethod
-    # def load_pools(cls) -> list:
-    #     pools = redis_client1.lrange("pools", 0, -1)
-    #     res = []
-    #     for item in pools:
-    #         pool_data = json.loads(item)
-    #         val = json.loads(pool_data["val"])
-    #         res.append(val["d"])
-    #
-    #     return res
-
-    # @classmethod
-    # def load_invs(cls):
-    #     invs = redis_client1.lrange("invs", 0, -1)
-    #     res = []
-    #     for item in invs:
-    #         inv_data = json.loads(item)
-    #         val = json.loads(inv_data["val"])
-    #         res.append(val["d"])
-    #
-    #     return res
 
     @classmethod
     def delete_user_from_dashboard(cls, key: str) -> None:
@@ -96,12 +40,6 @@ class PoolConsumer(AsyncWebsocketConsumer):
         )
 
 
-    @database_sync_to_async
-    def db_get_active(self, active_id):
-        try:
-            return Active.objects.get(id=active_id)
-        except Exception as ex:
-            logger.debug(str(ex))
     @database_sync_to_async
     def db_user_create(self, username: str) -> TelegramUser:
         return TelegramUser.objects.create(username=username, pnl=0)
